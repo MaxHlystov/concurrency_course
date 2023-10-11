@@ -5,8 +5,11 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.scheduling.annotation.Async;
+import org.springframework.scheduling.annotation.AsyncConfigurer;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.stereotype.Component;
+
+import java.util.concurrent.Executor;
 
 @Component
 public class AsyncClassTest {
@@ -19,8 +22,8 @@ public class AsyncClassTest {
     protected AsyncClassTest self;
 
     @Autowired
-    @Qualifier("applicationTaskExecutor")
-    private ThreadPoolTaskExecutor executor;
+    @Qualifier("threadPoolTaskExecutor")
+    private Executor executor;
 
     @Async
     public void runAsyncTask() {
@@ -28,7 +31,7 @@ public class AsyncClassTest {
         self.internalTask();
     }
 
-    @Async
+    @Async("threadPoolTaskExecutor")
     public void internalTask() {
         System.out.println("internalTask: " + Thread.currentThread().getName());
     }
