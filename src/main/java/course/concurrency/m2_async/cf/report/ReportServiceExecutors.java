@@ -8,7 +8,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
 
-public class ReportServiceExecutors {
+public class ReportServiceExecutors implements ReportService  {
 
     private final ExecutorService executor;
 
@@ -19,6 +19,7 @@ public class ReportServiceExecutors {
         this.loadGenerator = loadGenerator;
     }
 
+    @Override
     public Others.Report getReport() {
         Future<Collection<Others.Item>> iFuture =
                 executor.submit(this::getItems);
@@ -50,6 +51,7 @@ public class ReportServiceExecutors {
         return List.of(new Others.Item(), new Others.Item());
     }
 
+    @Override
     public void shutdown() {
         executor.shutdown();
     }

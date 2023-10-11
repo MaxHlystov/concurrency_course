@@ -6,14 +6,19 @@ import java.util.Collection;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.ForkJoinPool;
 
-public class ReportServiceCF {
+public class ReportServiceCF implements ReportService {
 
-    private ExecutorService executor = ForkJoinPool.commonPool();
+    private ExecutorService executor;
 
-    private LoadGenerator loadGenerator = new LoadGenerator(true);
+    private LoadGenerator loadGenerator;
 
+    public ReportServiceCF(ExecutorService executor, LoadGenerator loadGenerator) {
+        this.executor = executor;
+        this.loadGenerator = loadGenerator;
+    }
+
+    @Override
     public Others.Report getReport() {
         CompletableFuture<Collection<Others.Item>> itemsCF =
                 CompletableFuture.supplyAsync(() -> getItems(), executor);
@@ -43,6 +48,7 @@ public class ReportServiceCF {
         return List.of(new Others.Item(), new Others.Item());
     }
 
+    @Override
     public void shutdown() {
         executor.shutdown();
     }
