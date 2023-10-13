@@ -2,12 +2,11 @@ package course.concurrency.m2_async.cf.min_price;
 
 import org.springframework.lang.NonNull;
 
+import java.util.Arrays;
 import java.util.Collection;
-import java.util.List;
 import java.util.Set;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.stream.Collectors;
 
 public class PriceAggregator {
 
@@ -43,36 +42,41 @@ public class PriceAggregator {
     }
 
     public double getMinPrice(long itemId) {
-        final List<CompletableFuture<Double>> results = shopIds.stream()
+        final CompletableFuture<Double>[] results = shopIds.stream()
                 .map(shopId -> getPriceAsync(itemId, shopId))
-                .collect(Collectors.toList());
-        try {
-            CompletableFuture.allOf(results.toArray(CompletableFuture[]::new))
-                    .get(2900, TimeUnit.MILLISECONDS);
-        } catch (InterruptedException | ExecutionException | TimeoutException | CancellationException ignored) {
-        }
-        return results.stream()
-                .mapToDouble(this::unpackWithoutException)
-                .filter(price -> !Double.isNaN(price))
-                .min()
-                .orElse(Double.NaN);
+                .toArray(CompletableFuture[]::new);
+        return CompletableFuture.allOf(results)
+                .completeOnTimeout(null, 2900, TimeUnit.MILLISECONDS)
+                .thenApply(ignored ->
+                        Arrays.stream(results)
+                                .mapToDouble(this::unpackWithoutException)
+                                .filter(price -> !Double.isNaN(price))
+                                .min()
+                                .orElse(Double.NaN)
+                )
+                .handle(this::exceptionHandler)
+                .join();
     }
 
     private double unpackWithoutException(CompletableFuture<Double> result) {
         if (result.isDone() && !result.isCancelled() && !result.isCompletedExceptionally()) {
-            try {
-                return result.get();
-            } catch (InterruptedException | CancellationException ignored) {
-
-            } catch (Exception e) {
-                System.out.println("Log as warning: something went wrong in price retrieval: " + e.getMessage());
-            }
+            return result.join();
         }
         return Double.NaN;
     }
 
+    private Double exceptionHandler(Double result, Throwable exception) {
+        if (exception != null) {
+            System.out.println("Log as warning: something went wrong in price retrieval: " + exception.getMessage());
+            return Double.NaN;
+        } else {
+            return result;
+        }
+    }
+
     private CompletableFuture<Double> getPriceAsync(long itemId, long shopId) {
-        return CompletableFuture.supplyAsync(() -> priceRetriever.getPrice(itemId, shopId), executor);
+        return CompletableFuture.supplyAsync(() -> priceRetriever.getPrice(itemId, shopId), executor)
+                .handle(this::exceptionHandler);
     }
 
     private static ThreadFactory createDefaultFactory() {
