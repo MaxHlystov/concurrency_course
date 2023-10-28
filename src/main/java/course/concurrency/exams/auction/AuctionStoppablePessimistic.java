@@ -9,9 +9,12 @@ public class AuctionStoppablePessimistic implements AuctionStoppable {
     }
 
     private Bid latestBid;
+    private boolean isRun = true;
 
-    public boolean propose(Bid bid) {
-        if (bid.getPrice() > latestBid.getPrice()) {
+    public synchronized boolean propose(Bid bid) {
+        if (isRun &&
+                (latestBid == null || bid.getPrice() > latestBid.getPrice())
+        ) {
             notifier.sendOutdatedMessage(latestBid);
             latestBid = bid;
             return true;
@@ -19,11 +22,13 @@ public class AuctionStoppablePessimistic implements AuctionStoppable {
         return false;
     }
 
-    public Bid getLatestBid() {
+    public synchronized Bid getLatestBid() {
         return latestBid;
     }
 
-    public Bid stopAuction() {
+    public synchronized Bid stopAuction() {
+        isRun = false;
+        notifier.shutdown();
         return latestBid;
     }
 }
