@@ -1,14 +1,15 @@
 package course.concurrency.exams.auction;
 
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.concurrent.*;
 
 public class Notifier {
 
     private ExecutorService executorService;
 
     public Notifier() {
-        executorService = Executors.newFixedThreadPool(50);
+        executorService = new ThreadPoolExecutor(4, 2000,
+                60L, TimeUnit.SECONDS,
+                new LinkedBlockingQueue<>(100000000));
     }
 
     public void sendOutdatedMessage(Bid bid) {
