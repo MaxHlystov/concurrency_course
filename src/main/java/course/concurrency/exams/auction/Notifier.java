@@ -7,7 +7,7 @@ public class Notifier {
     private ExecutorService executorService;
 
     public Notifier() {
-        executorService = new ThreadPoolExecutor(4, 2000,
+        executorService = new ThreadPoolExecutor(4, 5,
                 60L, TimeUnit.SECONDS,
                 new LinkedBlockingQueue<>(100000000));
     }
