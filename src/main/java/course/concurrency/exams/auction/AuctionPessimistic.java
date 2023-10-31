@@ -2,23 +2,28 @@ package course.concurrency.exams.auction;
 
 public class AuctionPessimistic implements Auction {
 
+    private final static Bid LEAST_BID = new Bid(-1L, -1L, Long.MIN_VALUE);
     private final Notifier notifier;
 
     public AuctionPessimistic(Notifier notifier) {
         this.notifier = notifier;
     }
 
-    private volatile Bid latestBid;
+    private volatile Bid latestBid = LEAST_BID;
 
     public boolean propose(Bid bid) {
-        if (latestBid == null || bid.getPrice() > latestBid.getPrice()) {
+        if (bid.getPrice() > latestBid.getPrice()) {
+            boolean isSet = false;
             synchronized (this) {
-                if (latestBid == null || bid.getPrice() > latestBid.getPrice()) {
-                    notifier.sendOutdatedMessage(latestBid);
+                if (bid.getPrice() > latestBid.getPrice()) {
                     latestBid = bid;
-                    return true;
+                    isSet = true;
                 }
             }
+            if(isSet) {
+                notifier.sendOutdatedMessage(latestBid);
+            }
+            return isSet;
         }
         return false;
     }
