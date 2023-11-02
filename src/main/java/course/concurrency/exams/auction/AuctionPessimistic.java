@@ -2,14 +2,13 @@ package course.concurrency.exams.auction;
 
 public class AuctionPessimistic implements Auction {
 
-    private final static Bid LEAST_BID = new Bid(-1L, -1L, Long.MIN_VALUE);
     private final Notifier notifier;
 
     public AuctionPessimistic(Notifier notifier) {
         this.notifier = notifier;
     }
 
-    private volatile Bid latestBid = LEAST_BID;
+    private volatile Bid latestBid = Bid.LEAST_BID;
 
     public boolean propose(Bid bid) {
         if (bid.getPrice() > latestBid.getPrice()) {
