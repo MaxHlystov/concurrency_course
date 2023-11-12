@@ -1,46 +1,80 @@
 package course.concurrency.m3_shared.immutable;
 
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.UnaryOperator;
 
 public class OrderService {
 
-    private Map<Long, Order> currentOrders = new HashMap<>();
-    private long nextId = 0L;
+    // AtomicReference позволяет нам блочить currentOrders только в момент добавления заказа и только
+    // на время добавления ссылки. Все остальные операции, которые в реальности могут занимать
+    // некоторое время, мы выполняем в рамках блокировки отдельной ссылки на заказ.
+    private final Map<Long, AtomicReference<Order>> currentOrders = new ConcurrentHashMap<>();
+    private final Map<List<Item>, Order> orderByItemsList = new ConcurrentHashMap<>();
+    private final AtomicLong nextId = new AtomicLong(0L);
 
-    private synchronized long nextId() {
-        return nextId++;
+    public long createOrder(List<Item> items) {
+        // Чтобы обеспечить идемпотентность этого метода проще всего добавить айди запроса.
+        // Но т.к. я поменять сигнатуру этой функции не могу, то добавил проверку существования списка.
+        // На всякий случай, здесь, я борюсь с тем, чтобы два вызова createOrder с одним и тем же списком не привел
+        // к дублированию заказа.
+        final var order = orderByItemsList.computeIfAbsent(items, key ->
+                new Order(nextId(), items));
+        currentOrders.putIfAbsent(order.getId(), new AtomicReference<>(order));
+        return order.getId();
     }
 
-    public synchronized long createOrder(List<Item> items) {
-        long id = nextId();
-        Order order = new Order(items);
-        order.setId(id);
-        currentOrders.put(id, order);
-        return id;
-    }
-
-    public synchronized void updatePaymentInfo(long orderId, PaymentInfo paymentInfo) {
-        currentOrders.get(orderId).setPaymentInfo(paymentInfo);
-        if (currentOrders.get(orderId).checkStatus()) {
-            deliver(currentOrders.get(orderId));
+    public void updatePaymentInfo(long orderId, PaymentInfo paymentInfo) {
+        final var orderRef = currentOrders.get(orderId);
+        if (updateRef(orderRef, order -> order.withPaymentInfo(paymentInfo))) {
+            deliverIfCompleted(orderId);
         }
     }
 
-    public synchronized void setPacked(long orderId) {
-        currentOrders.get(orderId).setPacked(true);
-        if (currentOrders.get(orderId).checkStatus()) {
-            deliver(currentOrders.get(orderId));
+    public void setPacked(long orderId) {
+        final var orderRef = currentOrders.get(orderId);
+        if (updateRef(orderRef, Order::withPacked)) {
+            deliverIfCompleted(orderId);
         }
     }
 
-    private synchronized void deliver(Order order) {
-        /* ... */
-        currentOrders.get(order.getId()).setStatus(Order.Status.DELIVERED);
+    public boolean isDelivered(long orderId) {
+        return isDelivered(currentOrders.get(orderId).get());
     }
 
-    public synchronized boolean isDelivered(long orderId) {
-        return currentOrders.get(orderId).getStatus().equals(Order.Status.DELIVERED);
+    private static boolean updateRef(AtomicReference<Order> orderRef, UnaryOperator<Order> transition) {
+        Order order = null;
+        Order newOrder = null;
+        do {
+            order = orderRef.get();
+            newOrder = transition.apply(order);
+            if (order == newOrder) {
+                return false;
+            }
+        } while (!orderRef.compareAndSet(order, newOrder));
+        return true;
+    }
+
+    private boolean isDelivered(Order order) {
+        return order != null && Order.Status.DELIVERED.equals(order.getStatus());
+    }
+
+    private void deliverIfCompleted(long orderId) {
+        var order = currentOrders.get(orderId).get();
+        if (order != null && order.checkStatus() && !isDelivered(order)) {
+            final var orderRef = currentOrders.get(order.getId());
+            if (updateRef(orderRef, Order::withDeliveredStatus)) {
+                order = orderRef.get();
+                // send message and so on
+                System.out.println("Process of delivering the order with id " + order);
+            }
+        }
+    }
+
+    private long nextId() {
+        return nextId.getAndIncrement();
     }
 }
