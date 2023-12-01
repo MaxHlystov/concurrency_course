@@ -3,26 +3,28 @@ package course.concurrency.m5_queue;
 
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.Condition;
+import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
-public class BlockingQueueOneLock<T> implements BlockingQueue<T> {
+public class BlockingQueueTwoLocks<T> implements BlockingQueue<T> {
 
     private final int maxSize;
     private Node<T> tail;
     private Node<T> head;
     private final AtomicInteger size = new AtomicInteger(0);
-    private final ReentrantLock lock = new ReentrantLock();
-    private final Condition queueIsNotFull = lock.newCondition();
-    private final Condition queueIsNotEmpty = lock.newCondition();
+    private final ReentrantLock tailLock = new ReentrantLock();
+    private final ReentrantLock headLock = new ReentrantLock();
+    private final Condition queueIsNotFull = tailLock.newCondition();
+    private final Condition queueIsNotEmpty = headLock.newCondition();
 
-    public BlockingQueueOneLock(int maxSize) {
+    public BlockingQueueTwoLocks(int maxSize) {
         this.maxSize = maxSize;
     }
 
     @Override
     public void enqueue(T value) throws InterruptedException {
         try {
-            lock.lock();
+            tailLock.lock();
             while (size.get() == getMaxSize()) {
                 queueIsNotFull.await();
             }
@@ -32,30 +34,48 @@ public class BlockingQueueOneLock<T> implements BlockingQueue<T> {
             }
             tail = newNode;
             if (head == null) {
-                head = newNode;
+                try {
+                    // We always prevent order of locking: tailLock -> headLock.
+                    // In dequeue() we use only headLock.
+                    headLock.lock();
+                    head = newNode;
+                    queueIsNotEmpty.signal();
+                } finally {
+                    headLock.unlock();
+                }
+                if (size.incrementAndGet() < maxSize - 1) {
+                    queueIsNotFull.signal();
+                }
             }
-            size.incrementAndGet();
-            queueIsNotEmpty.signal();
         } finally {
-            lock.unlock();
+            tailLock.unlock();
+        }
+        if (size.get() > 0) {
+            signal(headLock, queueIsNotEmpty);
         }
     }
 
     @Override
     public T dequeue() throws InterruptedException {
+        final T value;
         try {
-            lock.lock();
+            headLock.lock();
             while (size.get() == 0) {
                 queueIsNotEmpty.await();
             }
             final Node<T> headNode = head;
+            value = headNode.getValue();
             head = headNode.getTail();
-            size.decrementAndGet();
-            queueIsNotFull.signal();
-            return headNode.getValue();
+            if (size.decrementAndGet() > 0) {
+                queueIsNotEmpty.signal();
+            }
         } finally {
-            lock.unlock();
+            headLock.unlock();
         }
+        if (size.get() < maxSize - 1) {
+            signal(tailLock, queueIsNotFull);
+        }
+        return value;
     }
 
     @Override
@@ -66,6 +86,15 @@ public class BlockingQueueOneLock<T> implements BlockingQueue<T> {
     @Override
     public int getMaxSize() {
         return maxSize;
+    }
+
+    private void signal(Lock lock, Condition condition) throws InterruptedException {
+        try {
+            lock.lockInterruptibly();
+            condition.signal();
+        } finally {
+            lock.unlock();
+        }
     }
 
     private static class Node<T> {
