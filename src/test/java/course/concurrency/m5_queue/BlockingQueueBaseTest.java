@@ -104,7 +104,6 @@ abstract class BlockingQueueBaseTest {
         final int size = maxSize + 1;
         BlockingQueue<Object> queue = new BlockingQueueOneLock<>(maxSize);
         final Object[] values = getValues(size);
-        AtomicBoolean threadFinished = new AtomicBoolean(false);
         Thread thread = new Thread(() -> {
             for (int i = 0; i < size; ++i) {
                 try {
@@ -113,11 +112,10 @@ abstract class BlockingQueueBaseTest {
                     throw new RuntimeException(e);
                 }
             }
-            threadFinished.set(true);
         });
         thread.start();
-        thread.join(1000);
-        assertFalse(threadFinished.get());
+        thread.join(500);
+        assertEquals(Thread.State.WAITING, thread.getState());
         assertEquals(maxSize, queue.getSize());
     }
 
